@@ -56,10 +56,15 @@ function PersonCard({ person, onClick, isSelected }: { person: Person; onClick: 
   const birthYear = person.birthDate ? new Date(person.birthDate).getFullYear() : "";
   const deathYear = person.deathDate ? new Date(person.deathDate).getFullYear() : "";
 
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onClick();
+  };
+
   return (
     <div
       className={`tree-person ${person.isYou ? "is-you" : ""} ${isSelected ? "selected" : ""}`}
-      onClick={onClick}
+      onClick={handleClick}
     >
       <div className="tree-avatar">{initials}</div>
       <div className="tree-name">{person.firstName} {person.lastName}</div>
@@ -199,12 +204,21 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const isDragging = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
 
   const root = selectedPerson || family.people[family.rootId];
   const positions = calculateTreeLayout(root, family);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setOffset({ 
+        x: window.innerWidth / 2, 
+        y: window.innerHeight / 2 - 100 
+      });
+    }
+  }, []);
 
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
@@ -221,12 +235,12 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
   }, [handleWheel]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    isDragging.current = true;
+    setDragging(true);
     lastPos.current = { x: e.clientX, y: e.clientY };
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging.current) return;
+    if (!dragging) return;
     setOffset(o => ({
       x: o.x + e.clientX - lastPos.current.x,
       y: o.y + e.clientY - lastPos.current.y
@@ -235,7 +249,7 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
   };
 
   const handleMouseUp = () => {
-    isDragging.current = false;
+    setDragging(false);
   };
 
   const renderLines = (): ReactNode[] => {
@@ -337,7 +351,7 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
         width: "100vw", 
         height: "100vh", 
         overflow: "hidden",
-        cursor: isDragging.current ? "grabbing" : "grab",
+        cursor: dragging ? "grabbing" : "grab",
         background: "var(--background)",
         position: "relative",
       }}
