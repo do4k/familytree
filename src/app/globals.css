@@ -133,6 +133,11 @@ body {
   background: linear-gradient(135deg, #fff5f5 0%, #ffffff 100%);
 }
 
+.tree-person.selected {
+  border-color: var(--pie-primary);
+  box-shadow: 0 0 0 3px rgba(255, 90, 95, 0.2);
+}
+
 .tree-avatar {
   width: 56px;
   height: 56px;
