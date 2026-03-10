@@ -1,10 +1,4 @@
-/*
-  X-Frame-Options: DENY
-  X-Content-Type-Options: nosniff
-  Referrer-Policy: strict-origin-when-cross-origin
-
-/.next/*
-  Cache-Control: public, max-age=31536000, immutable
-
-/index.rsc
-  Cache-Control: public, max-age=0, must-revalidate
+# https://developers.cloudflare.com/workers/static-assets/headers
+# https://opennext.js.org/cloudflare/caching#static-assets-caching
+/_next/static/*
+  Cache-Control: public,max-age=31536000,immutable
