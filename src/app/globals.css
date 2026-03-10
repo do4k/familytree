@@ -6,6 +6,7 @@
   --pie-primary: #ff5a5f;
   --pie-primary-hover: #e54e53;
   --pie-secondary: #484848;
+  --pie-secondary-light: #767676;
   --pie-border: #d8d8d8;
   --pie-surface: #f7f7f7;
   --pie-success: #057d4e;
@@ -20,6 +21,7 @@
   --color-pie-primary: var(--pie-primary);
   --color-pie-primary-hover: var(--pie-primary-hover);
   --color-pie-secondary: var(--pie-secondary);
+  --color-pie-secondary-light: var(--pie-secondary-light);
   --color-pie-border: var(--pie-border);
   --color-pie-surface: var(--pie-surface);
   --color-pie-success: var(--pie-success);
@@ -27,15 +29,6 @@
   --color-pie-error: var(--pie-error);
   --color-pie-info: var(--pie-info);
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #1a1a1a;
-    --foreground: #f0f0f0;
-    --pie-border: #404040;
-    --pie-surface: #2a2a2a;
-  }
 }
 
 * {
@@ -162,11 +155,41 @@ body {
 
 .tree-dates {
   font-size: 12px;
-  color: #888;
+  color: var(--pie-secondary-light);
 }
 
 .tree-connection-line {
   stroke: var(--pie-border);
   stroke-width: 2;
   fill: none;
+}
+
+.border-b {
+  border-bottom: 1px solid var(--pie-border);
+}
+
+.py-4 {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.px-6 {
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+.text-xl {
+  font-size: 20px;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+.text-sm {
+  font-size: 14px;
+}
+
+.hover\:text-pie-primary:hover {
+  color: var(--pie-primary);
 }
