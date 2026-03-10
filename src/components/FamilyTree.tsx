@@ -12,12 +12,6 @@ interface Position {
   y: number;
 }
 
-interface TreeNode {
-  person: Person;
-  position: Position;
-  spouse?: Person;
-}
-
 function getSpouse(person: Person, family: FamilyTree): Person | undefined {
   if (!person.spouseId) return undefined;
   return family.people[person.spouseId];
@@ -58,10 +52,6 @@ function PersonCard({ person, onClick, isSelected }: { person: Person; onClick: 
     <div
       className={`tree-person ${person.isYou ? "is-you" : ""} ${isSelected ? "selected" : ""}`}
       onClick={onClick}
-      style={{
-        position: "absolute",
-        transform: "translate(-50%, -50%)",
-      }}
     >
       <div className="tree-avatar">{initials}</div>
       <div className="tree-name">{person.firstName} {person.lastName}</div>
@@ -72,58 +62,58 @@ function PersonCard({ person, onClick, isSelected }: { person: Person; onClick: 
   );
 }
 
-function calculateTreeLayout(root: Person, family: FamilyTree, baseY: number = 100): Map<string, Position> {
+function calculateTreeLayout(root: Person, family: FamilyTree): Map<string, Position> {
   const positions = new Map<string, Position>();
   const nodeWidth = 180;
   const nodeHeight = 120;
   const siblingSpacing = 40;
-  const generationGap = 100;
+  const generationGap = 140;
+
+  const centerX = 400;
+  const centerY = 300;
+
+  positions.set(root.id, { x: centerX, y: centerY });
+
+  const spouse = getSpouse(root, family);
+  if (spouse) {
+    positions.set(spouse.id, { x: centerX + nodeWidth + siblingSpacing, y: centerY });
+  }
 
   const parents = getParents(root, family);
-  if (parents.length > 0) {
-    const parentCenter = baseY;
-    parents.forEach((parent, idx) => {
-      const offset = (idx - (parents.length - 1) / 2) * (nodeWidth + siblingSpacing);
-      positions.set(parent.id, { x: parentCenter + offset, y: baseY - generationGap });
+  const uniqueParents = parents.filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i);
+  if (uniqueParents.length > 0) {
+    const parentTotalWidth = uniqueParents.length * (nodeWidth + siblingSpacing) - siblingSpacing;
+    uniqueParents.forEach((parent, idx) => {
+      const x = centerX - parentTotalWidth / 2 + idx * (nodeWidth + siblingSpacing);
+      positions.set(parent.id, { x, y: centerY - generationGap });
       
-      const spouse = getSpouse(parent, family);
-      if (spouse) {
-        positions.set(spouse.id, { x: parentCenter + offset + nodeWidth + siblingSpacing, y: baseY - generationGap });
+      const parentSpouse = getSpouse(parent, family);
+      if (parentSpouse) {
+        positions.set(parentSpouse.id, { x: x + nodeWidth + siblingSpacing, y: centerY - generationGap });
       }
     });
   }
 
-  const rootX = baseY;
-  positions.set(root.id, { x: rootX, y: baseY });
-  
-  const spouse = getSpouse(root, family);
-  if (spouse) {
-    positions.set(spouse.id, { x: rootX + nodeWidth + siblingSpacing, y: baseY });
-  }
-
   const siblings = getSiblings(root, family);
-  const allChildren = [...siblings, root];
-  const totalWidth = allChildren.length * (nodeWidth + siblingSpacing) - siblingSpacing;
-  const startX = baseY - totalWidth / 2 + nodeWidth / 2;
-  
-  siblings.forEach((sibling, idx) => {
-    const x = startX + idx * (nodeWidth + siblingSpacing);
-    positions.set(sibling.id, { x, y: baseY });
-    
-    const siblingSpouse = getSpouse(sibling, family);
-    if (siblingSpouse) {
-      positions.set(siblingSpouse.id, { x: x + nodeWidth + siblingSpacing, y: baseY });
-    }
-  });
+  if (siblings.length > 0) {
+    const siblingTotalWidth = siblings.length * (nodeWidth + siblingSpacing) - siblingSpacing;
+    siblings.forEach((sibling, idx) => {
+      const x = centerX - siblingTotalWidth / 2 + idx * (nodeWidth + siblingSpacing);
+      positions.set(sibling.id, { x, y: centerY });
+      
+      const siblingSpouse = getSpouse(sibling, family);
+      if (siblingSpouse) {
+        positions.set(siblingSpouse.id, { x: x + nodeWidth + siblingSpacing, y: centerY });
+      }
+    });
+  }
 
   const children = getChildren(root, family);
   if (children.length > 0) {
-    const childCount = children.length;
-    const childTotalWidth = childCount * (nodeWidth + siblingSpacing) - siblingSpacing;
-    const childStartX = rootX - childTotalWidth / 2 + nodeWidth / 2;
-    
+    const childTotalWidth = children.length * (nodeWidth + siblingSpacing) - siblingSpacing;
     children.forEach((child, idx) => {
-      positions.set(child.id, { x: childStartX + idx * (nodeWidth + siblingSpacing), y: baseY + generationGap });
+      const x = centerX - childTotalWidth / 2 + idx * (nodeWidth + siblingSpacing);
+      positions.set(child.id, { x, y: centerY + generationGap });
     });
   }
 
@@ -198,7 +188,9 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
     const nodeHeight = 120;
 
     const parents = getParents(root, family);
-    parents.forEach(parent => {
+    const uniqueParents = parents.filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i);
+    
+    uniqueParents.forEach(parent => {
       const parentPos = positions.get(parent.id);
       const rootPos = positions.get(root.id);
       if (parentPos && rootPos) {
@@ -206,8 +198,8 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
           <path
             key={`line-${parent.id}`}
             d={`M ${parentPos.x} ${parentPos.y + nodeHeight / 2} 
-                L ${parentPos.x} ${parentPos.y + nodeHeight / 2 + 50} 
-                L ${rootPos.x} ${parentPos.y + nodeHeight / 2 + 50} 
+                L ${parentPos.x} ${parentPos.y + nodeHeight / 2 + 70} 
+                L ${rootPos.x} ${parentPos.y + nodeHeight / 2 + 70} 
                 L ${rootPos.x} ${rootPos.y - nodeHeight / 2}`}
             className="tree-connection-line"
           />
@@ -216,17 +208,16 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
     });
 
     const siblings = getSiblings(root, family);
-    const siblingsAndRoot = [...siblings, root];
-    siblingsAndRoot.forEach(sibling => {
+    siblings.forEach(sibling => {
       const siblingPos = positions.get(sibling.id);
       const rootPos = positions.get(root.id);
-      if (siblingPos && rootPos && sibling.id !== root.id) {
+      if (siblingPos && rootPos) {
         lines.push(
           <path
             key={`line-sibling-${sibling.id}`}
             d={`M ${siblingPos.x} ${siblingPos.y - nodeHeight / 2} 
-                L ${siblingPos.x} ${siblingPos.y - nodeHeight / 2 - 30} 
-                L ${rootPos.x} ${siblingPos.y - nodeHeight / 2 - 30} 
+                L ${siblingPos.x} ${siblingPos.y - nodeHeight / 2 - 35} 
+                L ${rootPos.x} ${siblingPos.y - nodeHeight / 2 - 35} 
                 L ${rootPos.x} ${rootPos.y - nodeHeight / 2}`}
             className="tree-connection-line"
           />
@@ -262,8 +253,8 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
           <path
             key={`line-child-${child.id}`}
             d={`M ${rootPos.x} ${rootPos.y + nodeHeight / 2} 
-                L ${rootPos.x} ${rootPos.y + nodeHeight / 2 + 30} 
-                L ${childPos.x} ${rootPos.y + nodeHeight / 2 + 30} 
+                L ${rootPos.x} ${rootPos.y + nodeHeight / 2 + 35} 
+                L ${childPos.x} ${rootPos.y + nodeHeight / 2 + 35} 
                 L ${childPos.x} ${childPos.y - nodeHeight / 2}`}
             className="tree-connection-line"
           />
@@ -283,6 +274,7 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
         overflow: "hidden",
         cursor: isDragging.current ? "grabbing" : "grab",
         background: "var(--background)",
+        position: "relative",
       }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
@@ -361,14 +353,14 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
           const spouse = getSpouse(person, family);
           
           return (
-            <div key={id} style={{ position: "absolute", left: pos.x, top: pos.y }}>
+            <div key={id} style={{ position: "absolute", left: pos.x, top: pos.y, transform: "translate(-50%, -50%)" }}>
               <PersonCard 
                 person={person} 
                 onClick={() => setSelectedPerson(person)} 
                 isSelected={selectedPerson?.id === person.id}
               />
               {spouse && positions.get(spouse.id) && (
-                <div style={{ position: "absolute", left: positions.get(spouse.id)!.x - pos.x, top: 0 }}>
+                <div style={{ position: "absolute", left: positions.get(spouse.id)!.x - pos.x, top: 0, transform: "translate(-50%, -50%)" }}>
                   <PersonCard 
                     person={spouse} 
                     onClick={() => setSelectedPerson(spouse)} 
