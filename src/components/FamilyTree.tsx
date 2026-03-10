@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import type { Person, FamilyTree } from "@/lib/family";
+import { hierarchy, tree, type HierarchyPointNode } from "d3-hierarchy";
+import { linkVertical, type Link } from "d3-shape";
 
 interface FamilyTreeProps {
   family: FamilyTree;
@@ -10,6 +12,12 @@ interface FamilyTreeProps {
 interface Position {
   x: number;
   y: number;
+}
+
+interface TreeNodeData {
+  id: string;
+  person: Person;
+  children?: TreeNodeData[];
 }
 
 function getSpouse(person: Person, family: FamilyTree): Person | undefined {
@@ -62,61 +70,109 @@ function PersonCard({ person, onClick, isSelected }: { person: Person; onClick: 
   );
 }
 
+function buildTreeData(rootPerson: Person, family: FamilyTree): TreeNodeData {
+  const visited = new Set<string>();
+  
+  function buildNode(person: Person): TreeNodeData {
+    if (visited.has(person.id)) {
+      return { id: person.id + "_copy", person };
+    }
+    visited.add(person.id);
+    
+    const children = getChildren(person, family);
+    const childNodes = children
+      .filter(c => !visited.has(c.id))
+      .map(c => buildNode(c));
+    
+    return {
+      id: person.id,
+      person,
+      children: childNodes.length > 0 ? childNodes : undefined
+    };
+  }
+  
+  return buildNode(rootPerson);
+}
+
 function calculateTreeLayout(root: Person, family: FamilyTree): Map<string, Position> {
   const positions = new Map<string, Position>();
-  const nodeWidth = 180;
-  const nodeHeight = 120;
-  const siblingSpacing = 40;
-  const generationGap = 140;
-
-  const centerX = 400;
-  const centerY = 300;
-
-  positions.set(root.id, { x: centerX, y: centerY });
-
+  
+  const treeData = buildTreeData(root, family);
+  const rootNode = hierarchy(treeData);
+  
+  const treeLayout = tree<TreeNodeData>()
+    .nodeSize([260, 160])
+    .separation((a, b) => (a.parent === b.parent ? 1 : 1.2));
+  
+  const treeRoot = treeLayout(rootNode);
+  
+  const nodeWidth = 220;
+  const nodeHeight = 100;
+  
+  treeRoot.each((node: HierarchyPointNode<TreeNodeData>) => {
+    positions.set(node.data.id, {
+      x: node.x,
+      y: node.y
+    });
+  });
+  
   const spouse = getSpouse(root, family);
-  if (spouse) {
-    positions.set(spouse.id, { x: centerX + nodeWidth + siblingSpacing, y: centerY });
+  if (spouse && !positions.has(spouse.id)) {
+    const rootPos = positions.get(root.id);
+    if (rootPos) {
+      positions.set(spouse.id, {
+        x: rootPos.x + nodeWidth + 40,
+        y: rootPos.y
+      });
+    }
   }
-
-  const parents = getParents(root, family);
-  const uniqueParents = parents.filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i);
-  if (uniqueParents.length > 0) {
-    const parentTotalWidth = uniqueParents.length * (nodeWidth + siblingSpacing) - siblingSpacing;
-    uniqueParents.forEach((parent, idx) => {
-      const x = centerX - parentTotalWidth / 2 + idx * (nodeWidth + siblingSpacing);
-      positions.set(parent.id, { x, y: centerY - generationGap });
-      
-      const parentSpouse = getSpouse(parent, family);
-      if (parentSpouse) {
-        positions.set(parentSpouse.id, { x: x + nodeWidth + siblingSpacing, y: centerY - generationGap });
-      }
-    });
-  }
-
+  
   const siblings = getSiblings(root, family);
-  if (siblings.length > 0) {
-    const siblingTotalWidth = siblings.length * (nodeWidth + siblingSpacing) - siblingSpacing;
-    siblings.forEach((sibling, idx) => {
-      const x = centerX - siblingTotalWidth / 2 + idx * (nodeWidth + siblingSpacing);
-      positions.set(sibling.id, { x, y: centerY });
-      
-      const siblingSpouse = getSpouse(sibling, family);
-      if (siblingSpouse) {
-        positions.set(siblingSpouse.id, { x: x + nodeWidth + siblingSpacing, y: centerY });
+  siblings.forEach(sibling => {
+    if (!positions.has(sibling.id)) {
+      const siblingPos = positions.get(root.id);
+      if (siblingPos) {
+        positions.set(sibling.id, {
+          x: siblingPos.x,
+          y: siblingPos.y
+        });
       }
-    });
-  }
-
-  const children = getChildren(root, family);
-  if (children.length > 0) {
-    const childTotalWidth = children.length * (nodeWidth + siblingSpacing) - siblingSpacing;
-    children.forEach((child, idx) => {
-      const x = centerX - childTotalWidth / 2 + idx * (nodeWidth + siblingSpacing);
-      positions.set(child.id, { x, y: centerY + generationGap });
-    });
-  }
-
+      const siblingSpouse = getSpouse(sibling, family);
+      if (siblingSpouse && !positions.has(siblingSpouse.id)) {
+        const sPos = positions.get(sibling.id);
+        if (sPos) {
+          positions.set(siblingSpouse.id, {
+            x: sPos.x + nodeWidth + 40,
+            y: sPos.y
+          });
+        }
+      }
+    }
+  });
+  
+  const parents = getParents(root, family);
+  parents.forEach(parent => {
+    if (!positions.has(parent.id)) {
+      const parentPos = positions.get(root.id);
+      if (parentPos) {
+        positions.set(parent.id, {
+          x: parentPos.x,
+          y: parentPos.y - 160
+        });
+      }
+      const parentSpouse = getSpouse(parent, family);
+      if (parentSpouse && !positions.has(parentSpouse.id)) {
+        const pPos = positions.get(parent.id);
+        if (pPos) {
+          positions.set(parentSpouse.id, {
+            x: pPos.x + nodeWidth + 40,
+            y: pPos.y
+          });
+        }
+      }
+    }
+  });
+  
   return positions;
 }
 
@@ -184,13 +240,40 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
 
   const renderLines = (): ReactNode[] => {
     const lines: ReactNode[] = [];
-    const nodeWidth = 180;
-    const nodeHeight = 120;
+    const nodeWidth = 220;
+    const nodeHeight = 100;
+
+    const treeData = buildTreeData(root, family);
+    const rootNode = hierarchy(treeData);
+    const treeLayout = tree<TreeNodeData>()
+      .nodeSize([260, 160])
+      .separation((a, b) => (a.parent === b.parent ? 1 : 1.2));
+    const treeRoot = treeLayout(rootNode);
+
+    const createLink = linkVertical<HierarchyPointNode<TreeNodeData>, HierarchyPointNode<TreeNodeData>>()
+      .x(d => d.x)
+      .y(d => d.y);
+
+    treeRoot.links().forEach((link, idx) => {
+      const sourcePos = positions.get(link.source.data.id);
+      const targetPos = positions.get(link.target.data.id);
+      
+      if (sourcePos && targetPos) {
+        const adjustedSource = { x: sourcePos.x, y: sourcePos.y + nodeHeight / 2 };
+        const adjustedTarget = { x: targetPos.x, y: targetPos.y - nodeHeight / 2 };
+        
+        lines.push(
+          <path
+            key={`line-${link.source.data.id}-${link.target.data.id}`}
+            d={createLink({ source: adjustedSource, target: adjustedTarget } as any) || ""}
+            className="tree-connection-line"
+          />
+        );
+      }
+    });
 
     const parents = getParents(root, family);
-    const uniqueParents = parents.filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i);
-    
-    uniqueParents.forEach(parent => {
+    parents.forEach(parent => {
       const parentPos = positions.get(parent.id);
       const rootPos = positions.get(root.id);
       if (parentPos && rootPos) {
@@ -198,26 +281,8 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
           <path
             key={`line-${parent.id}`}
             d={`M ${parentPos.x} ${parentPos.y + nodeHeight / 2} 
-                L ${parentPos.x} ${parentPos.y + nodeHeight / 2 + 70} 
-                L ${rootPos.x} ${parentPos.y + nodeHeight / 2 + 70} 
-                L ${rootPos.x} ${rootPos.y - nodeHeight / 2}`}
-            className="tree-connection-line"
-          />
-        );
-      }
-    });
-
-    const siblings = getSiblings(root, family);
-    siblings.forEach(sibling => {
-      const siblingPos = positions.get(sibling.id);
-      const rootPos = positions.get(root.id);
-      if (siblingPos && rootPos) {
-        lines.push(
-          <path
-            key={`line-sibling-${sibling.id}`}
-            d={`M ${siblingPos.x} ${siblingPos.y - nodeHeight / 2} 
-                L ${siblingPos.x} ${siblingPos.y - nodeHeight / 2 - 35} 
-                L ${rootPos.x} ${siblingPos.y - nodeHeight / 2 - 35} 
+                L ${parentPos.x} ${parentPos.y + nodeHeight / 2 + 35} 
+                L ${rootPos.x} ${parentPos.y + nodeHeight / 2 + 35} 
                 L ${rootPos.x} ${rootPos.y - nodeHeight / 2}`}
             className="tree-connection-line"
           />

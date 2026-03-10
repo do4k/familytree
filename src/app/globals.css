@@ -117,10 +117,22 @@ body {
   border: 2px solid var(--pie-border);
   border-radius: 12px;
   padding: 16px;
-  min-width: 160px;
+  width: 220px;
+  height: 100px;
   text-align: center;
   transition: all 0.2s ease;
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.tree-person .tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .tree-person:hover {
