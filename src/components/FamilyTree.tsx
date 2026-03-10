@@ -36,8 +36,10 @@ function getParents(person: Person, family: FamilyTree): Person[] {
 }
 
 function PersonCard({ person, onClick }: { person: Person; onClick: () => void }) {
-  const initials = `${person.firstName[0]}${person.lastName[0]}`;
-  const birthYear = person.birthDate ? new Date(person.birthDate).getFullYear() : "?";
+  const initials = person.lastName 
+    ? `${person.firstName[0]}${person.lastName[0]}` 
+    : person.firstName[0];
+  const birthYear = person.birthDate ? new Date(person.birthDate).getFullYear() : "";
   const deathYear = person.deathDate ? new Date(person.deathDate).getFullYear() : "";
 
   return (
@@ -158,16 +160,18 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
         <SiblingsRow person={root} family={family} onPersonClick={setSelectedPerson} />
       </div>
 
-      {selectedPerson && (
+      {selectedPerson && selectedPerson.id !== root.id && (
         <div className="fixed bottom-4 right-4 card max-w-sm">
           <h3 className="font-semibold text-lg mb-2">
             {selectedPerson.firstName} {selectedPerson.lastName}
           </h3>
-          {selectedPerson.birthPlace && (
-            <p className="text-sm text-gray-500">Born: {selectedPerson.birthPlace}</p>
+          {selectedPerson.birthDate && (
+            <p className="text-sm" style={{ color: "var(--pie-secondary-light)" }}>
+              Born: {new Date(selectedPerson.birthDate).toLocaleDateString("en-GB")}
+            </p>
           )}
           {selectedPerson.isYou && (
-            <p className="text-sm text-pie-primary font-medium mt-2">This is you</p>
+            <p className="text-sm" style={{ color: "var(--pie-primary)", fontWeight: 600, marginTop: "8px" }}>This is you</p>
           )}
         </div>
       )}
