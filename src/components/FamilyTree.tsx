@@ -7,12 +7,6 @@ interface FamilyTreeProps {
   family: FamilyTree;
 }
 
-interface TreeNodeProps {
-  person: Person;
-  family: FamilyTree;
-  onPersonClick: (person: Person) => void;
-}
-
 function getSpouse(person: Person, family: FamilyTree): Person | undefined {
   if (!person.spouseId) return undefined;
   return family.people[person.spouseId];
@@ -20,6 +14,13 @@ function getSpouse(person: Person, family: FamilyTree): Person | undefined {
 
 function getChildren(person: Person, family: FamilyTree): Person[] {
   return Object.values(family.people).filter((p) => p.parentId === person.id);
+}
+
+function getSiblings(person: Person, family: FamilyTree): Person[] {
+  if (!person.parentId) return [];
+  return Object.values(family.people).filter(
+    (p) => p.parentId === person.parentId && p.id !== person.id
+  );
 }
 
 function getParents(person: Person, family: FamilyTree): Person[] {
@@ -56,71 +57,53 @@ function PersonCard({ person, onClick }: { person: Person; onClick: () => void }
   );
 }
 
-function ParentsRow({ person, family, onPersonClick }: TreeNodeProps) {
-  const parents = getParents(person, family);
-  if (parents.length === 0) return null;
-
-  const uniqueParents = parents.filter((p, i, arr) => 
-    arr.findIndex(x => x.id === p.id) === i
-  );
-
-  return (
-    <div className="flex justify-center gap-8 mb-8">
-      {uniqueParents.map((parent) => (
-        <div key={parent.id} className="tree-node">
-          <PersonCard person={parent} onClick={() => onPersonClick(parent)} />
-          {getSpouse(parent, family) && (
-            <PersonCard
-              person={getSpouse(parent, family)!}
-              onClick={() => onPersonClick(getSpouse(parent, family)!)}
-            />
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ChildrenRow({ person, family, onPersonClick }: TreeNodeProps) {
-  const children = getChildren(person, family);
-  if (children.length === 0) return null;
+function FamilyRow({ 
+  title, 
+  people, 
+  family, 
+  onPersonClick 
+}: { 
+  title: string; 
+  people: Person[]; 
+  family: FamilyTree;
+  onPersonClick: (p: Person) => void;
+}) {
+  if (people.length === 0) return null;
 
   return (
-    <div className="flex justify-center gap-8 mt-8">
-      {children.map((child) => (
-        <div key={child.id} className="tree-node">
-          <PersonCard person={child} onClick={() => onPersonClick(child)} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function SiblingsRow({ person, family, onPersonClick }: TreeNodeProps) {
-  if (!person.parentId) return null;
-  
-  const siblings = Object.values(family.people).filter(
-    (p) => p.parentId === person.parentId && p.id !== person.id
-  );
-
-  if (siblings.length === 0) return null;
-
-  return (
-    <div className="flex justify-center gap-8 mt-8">
-      {siblings.map((sibling) => {
-        const siblingSpouse = sibling.spouseId ? family.people[sibling.spouseId] : undefined;
-        return (
-          <div key={sibling.id} className="tree-node">
-            <PersonCard person={sibling} onClick={() => onPersonClick(sibling)} />
-            {siblingSpouse && (
-              <PersonCard
-                person={siblingSpouse}
-                onClick={() => onPersonClick(siblingSpouse)}
-              />
-            )}
+    <div className="flex flex-col items-center">
+      <span style={{ color: "var(--pie-secondary-light)", fontSize: "12px", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+        {title}
+      </span>
+      <div className="flex justify-center gap-8" style={{ marginBottom: "24px" }}>
+        {people.map((person) => (
+          <div key={person.id} className="tree-node">
+            <PersonCard person={person} onClick={() => onPersonClick(person)} />
           </div>
-        );
-      })}
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ViewSelector({ 
+  root, 
+  onBack 
+}: { 
+  root: Person; 
+  onBack: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-4 mb-6">
+      <button 
+        onClick={onBack}
+        className="btn btn-secondary"
+        style={{ padding: "8px 16px", fontSize: "14px" }}
+      >
+        ← Back
+      </button>
+      <span style={{ color: "var(--pie-secondary-light)" }}>Viewing:</span>
+      <span style={{ fontWeight: 600 }}>{root.firstName} {root.lastName}'s family</span>
     </div>
   );
 }
@@ -130,19 +113,38 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
     family.people[family.rootId]
   );
 
-  const root = family.people[family.rootId];
+  const root = selectedPerson || family.people[family.rootId];
   const spouse = getSpouse(root, family);
+  const children = getChildren(root, family);
+  const siblings = getSiblings(root, family);
+  const parents = getParents(root, family);
+
+  const uniqueParents = parents.filter((p, i, arr) => 
+    arr.findIndex(x => x.id === p.id) === i
+  );
 
   return (
     <div className="w-full overflow-auto p-8">
+      {selectedPerson && selectedPerson.id !== family.rootId && (
+        <ViewSelector 
+          root={selectedPerson} 
+          onBack={() => setSelectedPerson(family.people[family.rootId])} 
+        />
+      )}
+      
       <div className="flex flex-col items-center">
-        <ParentsRow person={root} family={family} onPersonClick={setSelectedPerson} />
-        
+        <FamilyRow 
+          title="Parents" 
+          people={uniqueParents} 
+          family={family} 
+          onPersonClick={setSelectedPerson} 
+        />
+
         <div className="flex justify-center gap-8">
           <div className="tree-node">
             <PersonCard
               person={root}
-              onClick={() => setSelectedPerson(root)}
+              onClick={() => root.id !== family.rootId ? setSelectedPerson(root) : () => {}}
             />
           </div>
           {spouse && (
@@ -155,12 +157,22 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
           )}
         </div>
 
-        <ChildrenRow person={root} family={family} onPersonClick={setSelectedPerson} />
+        <FamilyRow 
+          title="Children" 
+          people={children} 
+          family={family} 
+          onPersonClick={setSelectedPerson} 
+        />
         
-        <SiblingsRow person={root} family={family} onPersonClick={setSelectedPerson} />
+        <FamilyRow 
+          title="Siblings" 
+          people={siblings} 
+          family={family} 
+          onPersonClick={setSelectedPerson} 
+        />
       </div>
 
-      {selectedPerson && selectedPerson.id !== root.id && (
+      {selectedPerson && (
         <div className="fixed bottom-4 right-4 card max-w-sm">
           <h3 className="font-semibold text-lg mb-2">
             {selectedPerson.firstName} {selectedPerson.lastName}
