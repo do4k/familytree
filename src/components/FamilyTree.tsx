@@ -1,9 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
+import { useState, useRef, useEffect, type ReactNode } from "react";
 import type { Person, FamilyTree } from "@/lib/family";
-import { hierarchy, tree, type HierarchyPointNode } from "d3-hierarchy";
-import { linkVertical } from "d3-shape";
 
 interface FamilyTreeProps {
   family: FamilyTree;
@@ -12,12 +10,6 @@ interface FamilyTreeProps {
 interface Position {
   x: number;
   y: number;
-}
-
-interface TreeNodeData {
-  id: string;
-  person: Person;
-  children?: TreeNodeData[];
 }
 
 function getSpouse(person: Person, family: FamilyTree): Person | undefined {
@@ -75,80 +67,35 @@ function PersonCard({ person, onClick, isSelected }: { person: Person; onClick: 
   );
 }
 
-function buildTreeData(rootPerson: Person, family: FamilyTree): TreeNodeData {
-  const visited = new Set<string>();
-  
-  function buildNode(person: Person): TreeNodeData {
-    if (visited.has(person.id)) {
-      return { id: person.id + "_copy", person };
-    }
-    visited.add(person.id);
-    
-    const children = getChildren(person, family);
-    const childNodes = children
-      .filter(c => !visited.has(c.id))
-      .map(c => buildNode(c));
-    
-    return {
-      id: person.id,
-      person,
-      children: childNodes.length > 0 ? childNodes : undefined
-    };
-  }
-  
-  return buildNode(rootPerson);
-}
-
 function calculateTreeLayout(root: Person, family: FamilyTree): Map<string, Position> {
   const positions = new Map<string, Position>();
   const nodeWidth = 220;
-  const nodeHeight = 100;
-  const siblingSpacing = 40;
+  const siblingSpacing = 50;
   const generationGap = 140;
   
-  const treeData = buildTreeData(root, family);
-  const rootNode = hierarchy(treeData);
+  const centerX = 0;
+  const centerY = 0;
   
-  const treeLayout = tree<TreeNodeData>()
-    .nodeSize([260, 160])
-    .separation((a, b) => (a.parent === b.parent ? 1 : 1.2));
-  
-  const treeRoot = treeLayout(rootNode);
-  
-  treeRoot.each((node: HierarchyPointNode<TreeNodeData>) => {
-    positions.set(node.data.id, {
-      x: node.x,
-      y: node.y
-    });
-  });
-  
-  const rootPos = positions.get(root.id);
-  if (!rootPos) return positions;
+  positions.set(root.id, { x: centerX, y: centerY });
   
   const spouse = getSpouse(root, family);
   if (spouse) {
-    positions.set(spouse.id, {
-      x: rootPos.x + nodeWidth + siblingSpacing,
-      y: rootPos.y
-    });
+    positions.set(spouse.id, { x: centerX + nodeWidth + siblingSpacing, y: centerY });
   }
   
   const siblings = getSiblings(root, family);
   if (siblings.length > 0) {
     const allOnLevel = [root, ...siblings];
     const totalWidth = allOnLevel.length * (nodeWidth + siblingSpacing) - siblingSpacing;
-    const startX = rootPos.x - totalWidth / 2 + nodeWidth / 2;
+    const startX = centerX - totalWidth / 2 + nodeWidth / 2;
     
     siblings.forEach((sibling, idx) => {
       const x = startX + (idx + 1) * (nodeWidth + siblingSpacing);
-      positions.set(sibling.id, { x, y: rootPos.y });
+      positions.set(sibling.id, { x, y: centerY });
       
       const siblingSpouse = getSpouse(sibling, family);
       if (siblingSpouse) {
-        positions.set(siblingSpouse.id, {
-          x: x + nodeWidth + siblingSpacing,
-          y: rootPos.y
-        });
+        positions.set(siblingSpouse.id, { x: x + nodeWidth + siblingSpacing, y: centerY });
       }
     });
   }
@@ -156,21 +103,28 @@ function calculateTreeLayout(root: Person, family: FamilyTree): Map<string, Posi
   const parents = getParents(root, family);
   const uniqueParents = parents.filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i);
   if (uniqueParents.length > 0) {
-    const parentCount = uniqueParents.length;
-    const parentTotalWidth = parentCount * (nodeWidth + siblingSpacing);
-    const startX = rootPos.x - parentTotalWidth / 2 + nodeWidth / 2;
+    const parentTotalWidth = uniqueParents.length * (nodeWidth + siblingSpacing) - siblingSpacing;
+    const startX = centerX - parentTotalWidth / 2 + nodeWidth / 2;
     
     uniqueParents.forEach((parent, idx) => {
       const x = startX + idx * (nodeWidth + siblingSpacing);
-      positions.set(parent.id, { x, y: rootPos.y - generationGap });
+      positions.set(parent.id, { x, y: centerY - generationGap });
       
       const parentSpouse = getSpouse(parent, family);
       if (parentSpouse) {
-        positions.set(parentSpouse.id, {
-          x: x + nodeWidth + siblingSpacing,
-          y: rootPos.y - generationGap
-        });
+        positions.set(parentSpouse.id, { x: x + nodeWidth + siblingSpacing, y: centerY - generationGap });
       }
+    });
+  }
+  
+  const children = getChildren(root, family);
+  if (children.length > 0) {
+    const childTotalWidth = children.length * (nodeWidth + siblingSpacing) - siblingSpacing;
+    const startX = centerX - childTotalWidth / 2 + nodeWidth / 2;
+    
+    children.forEach((child, idx) => {
+      const x = startX + idx * (nodeWidth + siblingSpacing);
+      positions.set(child.id, { x, y: centerY + generationGap });
     });
   }
   
@@ -200,7 +154,7 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [dragging, setDragging] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const lastPos = useRef({ x: 0, y: 0 });
 
@@ -209,51 +163,34 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const rootPos = positions.get(root.id);
-      if (rootPos) {
-        setOffset({ 
-          x: window.innerWidth / 2 - rootPos.x, 
-          y: window.innerHeight / 2 - rootPos.y 
-        });
-      } else {
-        setOffset({ 
-          x: window.innerWidth / 2, 
-          y: window.innerHeight / 2 - 100 
-        });
-      }
+      setOffset({ 
+        x: window.innerWidth / 2, 
+        y: window.innerHeight / 2 
+      });
     }
-  }, [root.id, positions]);
+  }, []);
 
-  const handleWheel = useCallback((e: WheelEvent) => {
+  const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
     setScale(s => Math.min(Math.max(s * delta, 0.3), 3));
-  }, []);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (container) {
-      container.addEventListener("wheel", handleWheel, { passive: false });
-      return () => container.removeEventListener("wheel", handleWheel);
-    }
-  }, [handleWheel]);
+  };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    setDragging(true);
+    setIsDragging(true);
     lastPos.current = { x: e.clientX, y: e.clientY };
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!dragging) return;
-    setOffset(o => ({
-      x: o.x + e.clientX - lastPos.current.x,
-      y: o.y + e.clientY - lastPos.current.y
-    }));
+    if (!isDragging) return;
+    const dx = e.clientX - lastPos.current.x;
+    const dy = e.clientY - lastPos.current.y;
+    setOffset(o => ({ x: o.x + dx, y: o.y + dy }));
     lastPos.current = { x: e.clientX, y: e.clientY };
   };
 
   const handleMouseUp = () => {
-    setDragging(false);
+    setIsDragging(false);
   };
 
   const renderLines = (): ReactNode[] => {
@@ -343,10 +280,11 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
         width: "100vw", 
         height: "100vh", 
         overflow: "hidden",
-        cursor: dragging ? "grabbing" : "grab",
+        cursor: isDragging ? "grabbing" : "grab",
         background: "var(--background)",
         position: "relative",
       }}
+      onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
