@@ -1,212 +1,290 @@
 @import "tailwindcss";
 
+/* ── PIE Design System tokens ───────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #2e2e2e;
-  --pie-primary: #ff5a5f;
-  --pie-primary-hover: #e54e53;
-  --pie-secondary: #484848;
-  --pie-secondary-light: #767676;
-  --pie-border: #d8d8d8;
-  --pie-surface: #f7f7f7;
-  --pie-success: #057d4e;
-  --pie-warning: #f5a623;
-  --pie-error: #d93a0d;
-  --pie-info: #2173c4;
+  /* Brand */
+  --pie-brand-orange: #ff8000;
+  --pie-product-orange: #e56000;
+
+  /* Surfaces */
+  --pie-bg-default: #f5f5f5;
+  --pie-bg-card: #ffffff;
+  --pie-bg-subtle: #f0f0f0;
+
+  /* Content */
+  --pie-content-default: #242e30;
+  --pie-content-subdued: #5a6b6e;
+  --pie-content-placeholder: #8e9da0;
+  --pie-content-inverse: #ffffff;
+
+  /* Interactive */
+  --pie-interactive-brand: #e56000;
+  --pie-interactive-primary: #242e30;
+  --pie-interactive-secondary: #5a6b6e;
+
+  /* Border */
+  --pie-border-default: #d1d8da;
+  --pie-border-strong: #b0bec0;
+
+  /* Support / feedback */
+  --pie-support-positive: #017a3e;
+  --pie-support-error: #d50000;
+  --pie-support-warning: #f5a623;
+  --pie-support-info: #005aab;
+
+  /* Elevation (PIE elevation-below-10) */
+  --pie-elevation-10: 0 2px 4px rgba(0, 0, 0, 0.08);
+  --pie-elevation-20: 0 4px 12px rgba(0, 0, 0, 0.12);
+
+  /* Radius (PIE partial rounding multiples of 4) */
+  --pie-radius-s: 4px;
+  --pie-radius-m: 8px;
+  --pie-radius-l: 12px;
+  --pie-radius-full: 50rem;
+
+  /* Spacing scale (multiples of 4) */
+  --pie-space-a: 4px;
+  --pie-space-b: 8px;
+  --pie-space-c: 12px;
+  --pie-space-d: 16px;
+  --pie-space-e: 24px;
+  --pie-space-f: 32px;
+  --pie-space-g: 48px;
+
+  /* Typography */
+  --pie-font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, sans-serif;
+  --pie-font-weight-regular: 400;
+  --pie-font-weight-bold: 700;
+  --pie-font-size-body-s: 12px;
+  --pie-font-size-body-m: 14px;
+  --pie-font-size-body-l: 16px;
+  --pie-font-size-heading-s: 20px;
+
+  /* Motion (PIE motion tokens - productive) */
+  --pie-motion-duration-quick: 150ms;
+  --pie-motion-duration-default: 250ms;
+  --pie-motion-easing-productive: cubic-bezier(0.2, 0, 0.38, 0.9);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-pie-primary: var(--pie-primary);
-  --color-pie-primary-hover: var(--pie-primary-hover);
-  --color-pie-secondary: var(--pie-secondary);
-  --color-pie-secondary-light: var(--pie-secondary-light);
-  --color-pie-border: var(--pie-border);
-  --color-pie-surface: var(--pie-surface);
-  --color-pie-success: var(--pie-success);
-  --color-pie-warning: var(--pie-warning);
-  --color-pie-error: var(--pie-error);
-  --color-pie-info: var(--pie-info);
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --color-background: var(--pie-bg-default);
+  --color-foreground: var(--pie-content-default);
+  --font-sans: var(--pie-font-family);
 }
 
-* {
+/* ── Reset ──────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans);
   margin: 0;
+  padding: 0;
+  background: var(--pie-bg-default);
+  color: var(--pie-content-default);
+  font-family: var(--pie-font-family);
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 16px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: none;
-  gap: 8px;
-}
-
-.btn-primary {
-  background: var(--pie-primary);
-  color: white;
-}
-
-.btn-primary:hover {
-  background: var(--pie-primary-hover);
-}
-
-.btn-secondary {
-  background: var(--pie-surface);
-  color: var(--pie-secondary);
-  border: 1px solid var(--pie-border);
-}
-
-.btn-secondary:hover {
-  background: var(--pie-border);
-}
-
-.card {
-  background: var(--background);
-  border: 1px solid var(--pie-border);
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  transition: all 0.2s ease;
-}
-
-.card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-}
-
-.input {
-  width: 100%;
-  padding: 12px 16px;
-  border: 1px solid var(--pie-border);
-  border-radius: 8px;
-  font-size: 16px;
-  background: var(--background);
-  color: var(--foreground);
-  transition: border-color 0.2s ease;
-}
-
-.input:focus {
-  outline: none;
-  border-color: var(--pie-primary);
-}
-
-.tree-node {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.tree-person {
-  background: var(--background);
-  border: 2px solid var(--pie-border);
-  border-radius: 12px;
-  padding: 16px;
-  width: 220px;
-  height: 100px;
-  text-align: center;
-  transition: all 0.2s ease;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-}
-
-.tree-person .tree-name {
+/* ── Family Tree Canvas ─────────────────────────────────── */
+.ft-canvas {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
+  background: var(--pie-bg-default);
+  /* Subtle dot grid pattern */
+  background-image: radial-gradient(circle, var(--pie-border-default) 0.8px, transparent 0.8px);
+  background-size: 24px 24px;
+  touch-action: none;
+  user-select: none;
 }
 
-.tree-person:hover {
-  border-color: var(--pie-primary);
-  box-shadow: 0 4px 16px rgba(255, 90, 95, 0.15);
+/* ── World container (transformed) ──────────────────────── */
+.ft-world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
 }
 
-.tree-person.is-you {
-  border-color: var(--pie-primary);
-  background: linear-gradient(135deg, #fff5f5 0%, #ffffff 100%);
+/* ── SVG layer ──────────────────────────────────────────── */
+.ft-svg {
+  pointer-events: none;
 }
 
-.tree-person.selected {
-  border-color: var(--pie-warning);
-  box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.3);
-}
-
-.tree-avatar {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: var(--pie-surface);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--pie-secondary);
-  margin: 0 auto 8px;
-}
-
-.tree-name {
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--foreground);
-}
-
-.tree-dates {
-  font-size: 12px;
-  color: var(--pie-secondary-light);
-}
-
-.tree-connection-line {
-  stroke: var(--pie-border);
+/* ── Connector lines ────────────────────────────────────── */
+.ft-connector {
+  stroke: var(--pie-border-strong);
   stroke-width: 2;
   fill: none;
+  stroke-linecap: round;
 }
 
-.border-b {
-  border-bottom: 1px solid var(--pie-border);
+.ft-connector--spouse {
+  stroke-dasharray: 4 4;
+  stroke: var(--pie-interactive-brand);
+  stroke-width: 2;
 }
 
-.py-4 {
-  padding-top: 16px;
-  padding-bottom: 16px;
+/* ── Node positioning ───────────────────────────────────── */
+.ft-node-group {
+  pointer-events: none;
 }
 
-.px-6 {
-  padding-left: 24px;
-  padding-right: 24px;
+.ft-node {
+  position: absolute;
+  pointer-events: auto;
 }
 
-.text-xl {
-  font-size: 20px;
+/* ── Person Card ────────────────────────────────────────── */
+.ft-card {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--pie-space-c);
+  padding: var(--pie-space-c) var(--pie-space-d);
+  background: var(--pie-bg-card);
+  border: 1.5px solid var(--pie-border-default);
+  border-radius: var(--pie-radius-m);
+  box-shadow: var(--pie-elevation-10);
+  cursor: default;
+  transition:
+    border-color var(--pie-motion-duration-quick) var(--pie-motion-easing-productive),
+    box-shadow var(--pie-motion-duration-quick) var(--pie-motion-easing-productive);
+  overflow: hidden;
 }
 
-.font-semibold {
-  font-weight: 600;
+.ft-card:hover {
+  border-color: var(--pie-border-strong);
+  box-shadow: var(--pie-elevation-20);
 }
 
-.text-sm {
-  font-size: 14px;
+/* "You" highlight */
+.ft-card--you {
+  border-color: var(--pie-interactive-brand);
+  border-width: 2px;
+  background: linear-gradient(
+    135deg,
+    #fff7f0 0%,
+    var(--pie-bg-card) 60%
+  );
 }
 
-.hover\:text-pie-primary:hover {
-  color: var(--pie-primary);
+.ft-card--you:hover {
+  border-color: var(--pie-product-orange);
+}
+
+.ft-card--highlight {
+  border-color: var(--pie-support-info);
+  box-shadow: 0 0 0 3px rgba(0, 90, 171, 0.15);
+}
+
+/* Avatar circle */
+.ft-card__avatar {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--pie-radius-full);
+  background: var(--pie-bg-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--pie-font-size-body-l);
+  font-weight: var(--pie-font-weight-bold);
+  color: var(--pie-content-subdued);
+  letter-spacing: -0.02em;
+}
+
+.ft-card--you .ft-card__avatar {
+  background: var(--pie-interactive-brand);
+  color: var(--pie-content-inverse);
+}
+
+/* Info block */
+.ft-card__info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ft-card__name {
+  font-size: var(--pie-font-size-body-m);
+  font-weight: var(--pie-font-weight-bold);
+  color: var(--pie-content-default);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ft-card__dates {
+  font-size: var(--pie-font-size-body-s);
+  font-weight: var(--pie-font-weight-regular);
+  color: var(--pie-content-placeholder);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Controls ───────────────────────────────────────────── */
+.ft-controls {
+  position: absolute;
+  top: var(--pie-space-d);
+  right: var(--pie-space-d);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pie-space-a);
+  background: var(--pie-bg-card);
+  border: 1px solid var(--pie-border-default);
+  border-radius: var(--pie-radius-m);
+  box-shadow: var(--pie-elevation-20);
+  padding: var(--pie-space-a);
+}
+
+.ft-controls__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--pie-content-default);
+  border-radius: var(--pie-radius-s);
+  cursor: pointer;
+  transition: background var(--pie-motion-duration-quick) var(--pie-motion-easing-productive);
+  font-size: var(--pie-font-size-body-s);
+  font-weight: var(--pie-font-weight-bold);
+  font-family: var(--pie-font-family);
+}
+
+.ft-controls__btn:hover {
+  background: var(--pie-bg-subtle);
+}
+
+.ft-controls__btn--text {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* ── Hint ───────────────────────────────────────────────── */
+.ft-hint {
+  position: absolute;
+  bottom: var(--pie-space-d);
+  left: var(--pie-space-d);
+  z-index: 100;
+  font-size: var(--pie-font-size-body-s);
+  color: var(--pie-content-placeholder);
+  pointer-events: none;
 }

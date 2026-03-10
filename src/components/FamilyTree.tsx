@@ -1,381 +1,598 @@
 "use client";
 
-import { useState, useRef, useEffect, type ReactNode } from "react";
-import type { Person, FamilyTree } from "@/lib/family";
+import { useState, useRef, useEffect, useCallback, useMemo, type ReactElement } from "react";
+import * as d3Hierarchy from "d3-hierarchy";
+import type { Person, FamilyTree as FamilyTreeData } from "@/lib/family";
 
-interface FamilyTreeProps {
-  family: FamilyTree;
+// ── Constants ──────────────────────────────────────────────
+const CARD_W = 220;
+const CARD_H = 100;
+const COUPLE_GAP = 8; // gap between spouse cards
+const COUPLE_W = CARD_W * 2 + COUPLE_GAP; // width of a couple unit
+const H_SPACING = 40; // minimum horizontal gap between sibling branches
+const V_SPACING = 120; // vertical gap between generations
+const NODE_SIZE_X = COUPLE_W + H_SPACING; // horizontal node size for d3.tree
+const NODE_SIZE_Y = CARD_H + V_SPACING; // vertical node size for d3.tree
+
+// ── Types ──────────────────────────────────────────────────
+interface TreeNode {
+  id: string;
+  person: Person;
+  spouse?: Person;
+  children: TreeNode[];
 }
 
-interface Position {
+interface LayoutNode {
+  id: string;
+  person: Person;
+  spouse?: Person;
   x: number;
   y: number;
+  children: LayoutNode[];
+  parent: LayoutNode | null;
 }
 
-function getSpouse(person: Person, family: FamilyTree): Person | undefined {
-  if (!person.spouseId) return undefined;
-  return family.people[person.spouseId];
+interface FamilyTreeProps {
+  family: FamilyTreeData;
 }
 
-function getChildren(person: Person, family: FamilyTree): Person[] {
-  return Object.values(family.people).filter((p) => p.parentId === person.id);
-}
+// ── Data transformation ────────────────────────────────────
+// Build a proper tree from the flat family data.
+// Strategy: find all people who have children via parentId.
+// A "tree node" is a person who is a parentId target (i.e. has kids).
+// Their spouse is rendered beside them but is NOT a separate tree node.
+// People who have no children are leaf nodes under their parent.
 
-function getSiblings(person: Person, family: FamilyTree): Person[] {
-  if (!person.parentId) return [];
-  return Object.values(family.people).filter(
-    (p) => p.parentId === person.parentId && p.id !== person.id
-  );
-}
+function buildTreeRoots(family: FamilyTreeData): TreeNode[] {
+  const people = family.people;
 
-function getParents(person: Person, family: FamilyTree): Person[] {
-  const parents: Person[] = [];
-  if (person.parentId) {
-    const parent = family.people[person.parentId];
-    if (parent) {
-      parents.push(parent);
-      const spouse = getSpouse(parent, family);
-      if (spouse) parents.push(spouse);
+  // Build a map of parentId -> children (only people who have a parentId)
+  const childrenOf = new Map<string, Person[]>();
+  for (const p of Object.values(people)) {
+    if (p.parentId) {
+      const existing = childrenOf.get(p.parentId) || [];
+      existing.push(p);
+      childrenOf.set(p.parentId, existing);
     }
   }
-  return parents;
+
+  // Determine who is a "primary" person (listed as parentId by someone,
+  // OR is a root person). Spouses who are only referenced via spouseId
+  // (and never as parentId) will be attached to their partner's node.
+  const isParent = new Set(childrenOf.keys());
+
+  // Find the spouse of a person
+  const getSpouse = (p: Person): Person | undefined => {
+    if (p.spouseId) return people[p.spouseId];
+    return undefined;
+  };
+
+  // Recursively build tree nodes
+  const visited = new Set<string>();
+
+  function buildNode(personId: string): TreeNode | null {
+    if (visited.has(personId)) return null;
+    const person = people[personId];
+    if (!person) return null;
+
+    visited.add(personId);
+
+    const spouse = getSpouse(person);
+    if (spouse) visited.add(spouse.id);
+
+    // Get children of this person. Also check if their spouse is a parentId target.
+    const myChildren = childrenOf.get(personId) || [];
+    const spouseChildren = spouse ? (childrenOf.get(spouse.id) || []) : [];
+
+    // Merge and deduplicate
+    const allChildIds = new Set<string>();
+    const allChildren: Person[] = [];
+    for (const c of [...myChildren, ...spouseChildren]) {
+      if (!allChildIds.has(c.id)) {
+        allChildIds.add(c.id);
+        allChildren.push(c);
+      }
+    }
+
+    // For each child, if they are a "primary" person (have kids of their own),
+    // build a sub-tree. If they are spouses only (no children, referenced
+    // only via spouseId), they'll be paired with their partner.
+    // But first: children who are themselves parents become tree nodes.
+    // Children who are leaf nodes (no children of their own) also become tree nodes,
+    // but their spouses are attached beside them.
+
+    const childNodes: TreeNode[] = [];
+    for (const child of allChildren) {
+      // Skip if child is already visited (e.g. they were a spouse we already handled)
+      if (visited.has(child.id)) continue;
+
+      const node = buildNode(child.id);
+      if (node) childNodes.push(node);
+    }
+
+    return {
+      id: personId,
+      person,
+      spouse,
+      children: childNodes,
+    };
+  }
+
+  // Find root ancestors: people who have no parentId and are either
+  // themselves a parentId target or have a spouse who is.
+  // We need to identify top-level roots (generation 2 = great-grandparents, etc.)
+  const rootCandidates: string[] = [];
+  for (const p of Object.values(people)) {
+    if (!p.parentId && !visited.has(p.id)) {
+      // Is this person a parent, or is their spouse a parent?
+      const spouse = getSpouse(p);
+      const isAParent = isParent.has(p.id) || (spouse && isParent.has(spouse.id));
+      if (isAParent) {
+        rootCandidates.push(p.id);
+      }
+    }
+  }
+
+  // Sort by generation descending (highest generation = oldest ancestor at top)
+  rootCandidates.sort((a, b) => (people[b].generation ?? 0) - (people[a].generation ?? 0));
+
+  const roots: TreeNode[] = [];
+  for (const id of rootCandidates) {
+    if (visited.has(id)) continue;
+    const node = buildNode(id);
+    if (node) roots.push(node);
+  }
+
+  // Also pick up any remaining unvisited people who have a parentId
+  // pointing to someone already visited (edge case: spouse-only references)
+  // This handles people who are leaf nodes and weren't picked up
+  for (const p of Object.values(people)) {
+    if (!visited.has(p.id)) {
+      // This person wasn't reached. They may be an orphan spouse.
+      // We skip them since they'll be rendered as a spouse on their partner's card.
+    }
+  }
+
+  return roots;
 }
 
-function PersonCard({ person, onClick, isSelected }: { person: Person; onClick: () => void; isSelected: boolean }) {
-  const initials = person.lastName 
-    ? `${person.firstName[0]}${person.lastName[0]}` 
-    : person.firstName[0];
-  const birthYear = person.birthDate ? new Date(person.birthDate).getFullYear() : "";
-  const deathYear = person.deathDate ? new Date(person.deathDate).getFullYear() : "";
+// If there are multiple roots, create a virtual root to unify them
+function unifyRoots(roots: TreeNode[]): TreeNode {
+  if (roots.length === 1) return roots[0];
 
-  const handleClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onClick();
+  // Create a virtual root
+  const virtualPerson: Person = {
+    id: "__root__",
+    firstName: "",
+    lastName: "",
+    generation: Math.max(...roots.map(r => r.person.generation)) + 1,
   };
+
+  return {
+    id: "__root__",
+    person: virtualPerson,
+    children: roots,
+  };
+}
+
+// ── Layout computation using d3.tree() ─────────────────────
+function computeLayout(root: TreeNode): LayoutNode {
+  // Convert our TreeNode into a d3 hierarchy
+  const hierarchy = d3Hierarchy.hierarchy(root, (d) => d.children);
+
+  // Create a tree layout with fixed node sizes
+  const treeLayout = d3Hierarchy.tree<TreeNode>()
+    .nodeSize([NODE_SIZE_X, NODE_SIZE_Y])
+    .separation((a, b) => {
+      // If siblings, use 1. If cousins, use 1.2 for more breathing room.
+      return a.parent === b.parent ? 1 : 1.2;
+    });
+
+  const laid = treeLayout(hierarchy);
+
+  // Convert d3 hierarchy nodes to our LayoutNode format
+  function convert(node: d3Hierarchy.HierarchyPointNode<TreeNode>): LayoutNode {
+    return {
+      id: node.data.id,
+      person: node.data.person,
+      spouse: node.data.spouse,
+      x: node.x,
+      y: node.y,
+      children: (node.children || []).map(convert),
+      parent: null, // will be set below
+    };
+  }
+
+  const layoutRoot = convert(laid);
+
+  // Set parent references
+  function setParents(node: LayoutNode) {
+    for (const child of node.children) {
+      child.parent = node;
+      setParents(child);
+    }
+  }
+  setParents(layoutRoot);
+
+  return layoutRoot;
+}
+
+// ── Flatten layout tree for rendering ──────────────────────
+function flattenLayout(node: LayoutNode): LayoutNode[] {
+  const result: LayoutNode[] = [];
+  function walk(n: LayoutNode) {
+    result.push(n);
+    for (const c of n.children) walk(c);
+  }
+  walk(node);
+  return result;
+}
+
+// ── PersonCard component ───────────────────────────────────
+function PersonCard({
+  person,
+  isHighlighted,
+}: {
+  person: Person;
+  isHighlighted?: boolean;
+}) {
+  const initials = person.lastName
+    ? `${person.firstName[0]}${person.lastName[0]}`
+    : person.firstName[0] || "?";
+
+  const birthYear = person.birthDate
+    ? new Date(person.birthDate).getFullYear()
+    : null;
+  const deathYear = person.deathDate
+    ? new Date(person.deathDate).getFullYear()
+    : null;
+
+  const dateStr = birthYear
+    ? deathYear
+      ? `${birthYear} - ${deathYear}`
+      : `b. ${birthYear}`
+    : "";
 
   return (
     <div
-      className={`tree-person ${person.isYou ? "is-you" : ""} ${isSelected ? "selected" : ""}`}
-      onClick={handleClick}
+      className={`ft-card ${person.isYou ? "ft-card--you" : ""} ${isHighlighted ? "ft-card--highlight" : ""}`}
     >
-      <div className="tree-avatar">{initials}</div>
-      <div className="tree-name">{person.firstName} {person.lastName}</div>
-      <div className="tree-dates">
-        {birthYear} {deathYear ? `— ${deathYear}` : ""}
+      <div className="ft-card__avatar">{initials}</div>
+      <div className="ft-card__info">
+        <div className="ft-card__name">
+          {person.firstName} {person.lastName}
+        </div>
+        {dateStr && <div className="ft-card__dates">{dateStr}</div>}
       </div>
     </div>
   );
 }
 
-function calculateTreeLayout(root: Person, family: FamilyTree): Map<string, Position> {
-  const positions = new Map<string, Position>();
-  const nodeWidth = 220;
-  const siblingSpacing = 120;
-  const generationGap = 200;
-  
-  const centerX = 0;
-  const centerY = 0;
-  
-  positions.set(root.id, { x: centerX, y: centerY });
-  
-  const spouse = getSpouse(root, family);
-  if (spouse) {
-    positions.set(spouse.id, { x: centerX + nodeWidth + siblingSpacing, y: centerY });
-  }
-  
-  const siblings = getSiblings(root, family);
-  if (siblings.length > 0) {
-    const allOnLevel = [root, ...siblings];
-    const totalWidth = allOnLevel.length * (nodeWidth + siblingSpacing) - siblingSpacing;
-    const startX = centerX - totalWidth / 2 + nodeWidth / 2;
-    
-    siblings.forEach((sibling, idx) => {
-      const x = startX + (idx + 1) * (nodeWidth + siblingSpacing);
-      positions.set(sibling.id, { x, y: centerY });
-      
-      const siblingSpouse = getSpouse(sibling, family);
-      if (siblingSpouse) {
-        positions.set(siblingSpouse.id, { x: x + nodeWidth + siblingSpacing, y: centerY });
-      }
-    });
-  }
-  
-  const parents = getParents(root, family);
-  const uniqueParents = parents.filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i);
-  if (uniqueParents.length > 0) {
-    const parentTotalWidth = uniqueParents.length * (nodeWidth + siblingSpacing) - siblingSpacing;
-    const startX = centerX - parentTotalWidth / 2 + nodeWidth / 2;
-    
-    uniqueParents.forEach((parent, idx) => {
-      const x = startX + idx * (nodeWidth + siblingSpacing);
-      positions.set(parent.id, { x, y: centerY - generationGap });
-      
-      const parentSpouse = getSpouse(parent, family);
-      if (parentSpouse) {
-        positions.set(parentSpouse.id, { x: x + nodeWidth + siblingSpacing, y: centerY - generationGap });
-      }
-    });
-  }
-  
-  const children = getChildren(root, family);
-  if (children.length > 0) {
-    const childTotalWidth = children.length * (nodeWidth + siblingSpacing) - siblingSpacing;
-    const startX = centerX - childTotalWidth / 2 + nodeWidth / 2;
-    
-    children.forEach((child, idx) => {
-      const x = startX + idx * (nodeWidth + siblingSpacing);
-      positions.set(child.id, { x, y: centerY + generationGap });
-    });
-  }
-  
-  return positions;
-}
+// ── SVG Connectors ─────────────────────────────────────────
+function ConnectorLines({ nodes }: { nodes: LayoutNode[] }) {
+  const paths: ReactElement[] = [];
 
-function ViewSelector({ onBack }: { onBack: () => void }) {
-  return (
-    <button 
-      onClick={onBack}
-      className="btn btn-secondary"
-      style={{ 
-        position: "fixed", 
-        top: "20px", 
-        left: "20px", 
-        zIndex: 100,
-        padding: "8px 16px", 
-        fontSize: "14px" 
-      }}
-    >
-      ← Back to My Tree
-    </button>
-  );
-}
-
-export default function FamilyTree({ family }: FamilyTreeProps) {
-  const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
-  const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const lastPos = useRef({ x: 0, y: 0 });
-
-  const root = selectedPerson || family.people[family.rootId];
-  const positions = calculateTreeLayout(root, family);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setOffset({ 
-        x: window.innerWidth / 2, 
-        y: window.innerHeight / 2 
-      });
+  for (const node of nodes) {
+    if (node.children.length === 0) continue;
+    if (node.id === "__root__") {
+      // Virtual root: don't draw lines from it, draw from each child
+      continue;
     }
+
+    const parentX = node.x;
+    const parentBottomY = node.y + CARD_H / 2;
+
+    // Midpoint Y between parent bottom and children top
+    const firstChild = node.children[0];
+    const childTopY = firstChild.y - CARD_H / 2;
+    const midY = parentBottomY + (childTopY - parentBottomY) / 2;
+
+    // Vertical line from parent down to midpoint
+    paths.push(
+      <line
+        key={`v-down-${node.id}`}
+        x1={parentX}
+        y1={parentBottomY}
+        x2={parentX}
+        y2={midY}
+        className="ft-connector"
+      />
+    );
+
+    if (node.children.length === 1) {
+      // Single child: straight line down
+      const child = node.children[0];
+      paths.push(
+        <line
+          key={`v-child-${child.id}`}
+          x1={parentX}
+          y1={midY}
+          x2={child.x}
+          y2={child.y - CARD_H / 2}
+          className="ft-connector"
+        />
+      );
+    } else {
+      // Multiple children: horizontal bar + vertical drops
+      const childXs = node.children.map((c) => c.x);
+      const minX = Math.min(...childXs);
+      const maxX = Math.max(...childXs);
+
+      // Horizontal bar
+      paths.push(
+        <line
+          key={`h-bar-${node.id}`}
+          x1={minX}
+          y1={midY}
+          x2={maxX}
+          y2={midY}
+          className="ft-connector"
+        />
+      );
+
+      // Vertical drops to each child
+      for (const child of node.children) {
+        paths.push(
+          <line
+            key={`v-child-${child.id}`}
+            x1={child.x}
+            y1={midY}
+            x2={child.x}
+            y2={child.y - CARD_H / 2}
+            className="ft-connector"
+          />
+        );
+      }
+    }
+
+    // Spouse connector (dashed horizontal line between spouse cards)
+    if (node.spouse) {
+      const leftX = node.x - COUPLE_GAP / 2 - CARD_W;
+      const rightX = node.x - COUPLE_GAP / 2;
+      const leftEnd = leftX + CARD_W;
+      const rightStart = rightX;
+      // Actually the spouse cards sit at:
+      // person card: centerX = node.x - (CARD_W + COUPLE_GAP) / 2
+      // spouse card: centerX = node.x + (CARD_W + COUPLE_GAP) / 2
+      // So the right edge of person card = node.x - COUPLE_GAP/2
+      // And the left edge of spouse card = node.x + COUPLE_GAP/2
+      paths.push(
+        <line
+          key={`spouse-${node.id}`}
+          x1={node.x - COUPLE_GAP / 2}
+          y1={node.y}
+          x2={node.x + COUPLE_GAP / 2}
+          y2={node.y}
+          className="ft-connector ft-connector--spouse"
+        />
+      );
+    }
+  }
+
+  return <>{paths}</>;
+}
+
+// ── Virtual root connector (just horizontal bars for multi-root) ───
+function VirtualRootConnectors({ root }: { root: LayoutNode }) {
+  if (root.id !== "__root__") return null;
+  // No lines from virtual root
+  return null;
+}
+
+// ── Main component ─────────────────────────────────────────
+export default function FamilyTree({ family }: FamilyTreeProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
+  const [isPanning, setIsPanning] = useState(false);
+  const lastPointer = useRef({ x: 0, y: 0 });
+  const [initialized, setInitialized] = useState(false);
+
+  // Build and layout the tree
+  const layoutRoot = useMemo(() => {
+    const roots = buildTreeRoots(family);
+    const unified = unifyRoots(roots);
+    return computeLayout(unified);
+  }, [family]);
+
+  const allNodes = useMemo(() => flattenLayout(layoutRoot), [layoutRoot]);
+
+  // Filter out virtual root from rendering
+  const renderNodes = useMemo(
+    () => allNodes.filter((n) => n.id !== "__root__"),
+    [allNodes]
+  );
+
+  // Center the tree on the "You" person or the root
+  useEffect(() => {
+    if (!containerRef.current || initialized) return;
+
+    const youNode = renderNodes.find((n) => n.person.isYou);
+    const centerNode = youNode || renderNodes[0];
+    if (!centerNode) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    setTransform({
+      x: rect.width / 2 - centerNode.x,
+      y: rect.height / 2 - centerNode.y,
+      scale: 0.85,
+    });
+    setInitialized(true);
+  }, [renderNodes, initialized]);
+
+  // ── Pan handlers ──────────────────────────────────────
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    // Only pan on primary button (left click) or touch
+    if (e.button !== 0) return;
+    setIsPanning(true);
+    lastPointer.current = { x: e.clientX, y: e.clientY };
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
   }, []);
 
-  const handleWheel = (e: React.WheelEvent) => {
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!isPanning) return;
+      const dx = e.clientX - lastPointer.current.x;
+      const dy = e.clientY - lastPointer.current.y;
+      lastPointer.current = { x: e.clientX, y: e.clientY };
+      setTransform((t) => ({ ...t, x: t.x + dx, y: t.y + dy }));
+    },
+    [isPanning]
+  );
+
+  const handlePointerUp = useCallback(() => {
+    setIsPanning(false);
+  }, []);
+
+  // ── Zoom handler ──────────────────────────────────────
+  const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setScale(s => Math.min(Math.max(s * delta, 0.3), 3));
+    const factor = e.deltaY > 0 ? 0.92 : 1.08;
+    setTransform((t) => {
+      const newScale = Math.min(Math.max(t.scale * factor, 0.15), 3);
+
+      // Zoom towards cursor position
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return { ...t, scale: newScale };
+
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+
+      const scaleRatio = newScale / t.scale;
+      return {
+        scale: newScale,
+        x: cx - scaleRatio * (cx - t.x),
+        y: cy - scaleRatio * (cy - t.y),
+      };
+    });
+  }, []);
+
+  // ── Zoom controls ─────────────────────────────────────
+  const zoomIn = () =>
+    setTransform((t) => ({ ...t, scale: Math.min(t.scale * 1.25, 3) }));
+  const zoomOut = () =>
+    setTransform((t) => ({ ...t, scale: Math.max(t.scale * 0.8, 0.15) }));
+  const resetView = () => {
+    const youNode = renderNodes.find((n) => n.person.isYou);
+    const centerNode = youNode || renderNodes[0];
+    if (!centerNode || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    setTransform({
+      x: rect.width / 2 - centerNode.x,
+      y: rect.height / 2 - centerNode.y,
+      scale: 0.85,
+    });
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    lastPos.current = { x: e.clientX, y: e.clientY };
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return;
-    const dx = e.clientX - lastPos.current.x;
-    const dy = e.clientY - lastPos.current.y;
-    setOffset(o => ({ x: o.x + dx, y: o.y + dy }));
-    lastPos.current = { x: e.clientX, y: e.clientY };
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
-  const renderLines = (): ReactNode[] => {
-    const lines: ReactNode[] = [];
-    const nodeWidth = 220;
-    const nodeHeight = 100;
-
-    const spouse = getSpouse(root, family);
-    if (spouse) {
-      const spousePos = positions.get(spouse.id);
-      const rootPos = positions.get(root.id);
-      if (spousePos && rootPos) {
-        lines.push(
-          <line
-            key={`line-spouse`}
-            x1={rootPos.x + nodeWidth / 2}
-            y1={spousePos.y}
-            x2={spousePos.x - nodeWidth / 2}
-            y2={spousePos.y}
-            className="tree-connection-line"
-            style={{ strokeDasharray: "5,5" }}
-          />
-        );
-      }
+  // Compute SVG viewBox bounds for the full tree
+  const bounds = useMemo(() => {
+    if (renderNodes.length === 0) return { minX: 0, minY: 0, maxX: 1000, maxY: 1000 };
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of renderNodes) {
+      const halfCoupleW = n.spouse ? COUPLE_W / 2 : CARD_W / 2;
+      minX = Math.min(minX, n.x - halfCoupleW - 20);
+      maxX = Math.max(maxX, n.x + halfCoupleW + 20);
+      minY = Math.min(minY, n.y - CARD_H / 2 - 20);
+      maxY = Math.max(maxY, n.y + CARD_H / 2 + 20);
     }
+    return { minX, minY, maxX, maxY };
+  }, [renderNodes]);
 
-    const siblings = getSiblings(root, family);
-    const rootPos = positions.get(root.id);
-    siblings.forEach(sibling => {
-      const siblingPos = positions.get(sibling.id);
-      if (siblingPos && rootPos) {
-        lines.push(
-          <path
-            key={`line-sibling-${sibling.id}`}
-            d={`M ${siblingPos.x} ${siblingPos.y - nodeHeight / 2} 
-                L ${siblingPos.x} ${siblingPos.y - nodeHeight / 2 - 35} 
-                L ${rootPos.x} ${siblingPos.y - nodeHeight / 2 - 35} 
-                L ${rootPos.x} ${rootPos.y - nodeHeight / 2}`}
-            className="tree-connection-line"
-          />
-        );
-      }
-    });
-
-    const parents = getParents(root, family);
-    const uniqueParents = parents.filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i);
-    uniqueParents.forEach(parent => {
-      const parentPos = positions.get(parent.id);
-      if (parentPos && rootPos) {
-        lines.push(
-          <path
-            key={`line-${parent.id}`}
-            d={`M ${parentPos.x} ${parentPos.y + nodeHeight / 2} 
-                L ${parentPos.x} ${parentPos.y + nodeHeight / 2 + 35} 
-                L ${rootPos.x} ${parentPos.y + nodeHeight / 2 + 35} 
-                L ${rootPos.x} ${rootPos.y - nodeHeight / 2}`}
-            className="tree-connection-line"
-          />
-        );
-      }
-    });
-
-    const children = getChildren(root, family);
-    children.forEach(child => {
-      const childPos = positions.get(child.id);
-      if (childPos && rootPos) {
-        lines.push(
-          <path
-            key={`line-child-${child.id}`}
-            d={`M ${rootPos.x} ${rootPos.y + nodeHeight / 2} 
-                L ${rootPos.x} ${rootPos.y + nodeHeight / 2 + 35} 
-                L ${childPos.x} ${rootPos.y + nodeHeight / 2 + 35} 
-                L ${childPos.x} ${childPos.y - nodeHeight / 2}`}
-            className="tree-connection-line"
-          />
-        );
-      }
-    });
-
-    return lines;
-  };
+  const svgWidth = bounds.maxX - bounds.minX;
+  const svgHeight = bounds.maxY - bounds.minY;
 
   return (
-    <div 
+    <div
       ref={containerRef}
-      style={{ 
-        width: "100vw", 
-        height: "100vh", 
-        overflow: "hidden",
-        cursor: isDragging ? "grabbing" : "grab",
-        background: "var(--background)",
-        position: "relative",
-      }}
+      className="ft-canvas"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
       onWheel={handleWheel}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      style={{ cursor: isPanning ? "grabbing" : "grab" }}
     >
-      {selectedPerson && (
-        <ViewSelector onBack={() => setSelectedPerson(null)} />
-      )}
-      
-      <div style={{ 
-        position: "absolute",
-        top: "20px",
-        right: "20px",
-        zIndex: 100,
-        display: "flex",
-        gap: "8px",
-      }}>
-        <button 
-          onClick={() => setScale(s => Math.min(s * 1.2, 3))}
-          className="btn btn-secondary"
-          style={{ padding: "8px 12px", fontSize: "14px" }}
-        >
-          +
+      {/* Zoom controls */}
+      <div className="ft-controls">
+        <button onClick={zoomIn} className="ft-controls__btn" title="Zoom in">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M9 3v12M3 9h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
         </button>
-        <button 
-          onClick={() => setScale(s => Math.max(s * 0.8, 0.3))}
-          className="btn btn-secondary"
-          style={{ padding: "8px 12px", fontSize: "14px" }}
-        >
-          −
+        <button onClick={zoomOut} className="ft-controls__btn" title="Zoom out">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M3 9h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        </button>
+        <button onClick={resetView} className="ft-controls__btn ft-controls__btn--text" title="Reset view">
+          Reset
         </button>
       </div>
 
-      <div style={{ 
-        position: "absolute",
-        bottom: "20px",
-        left: "20px",
-        zIndex: 100,
-        fontSize: "12px",
-        color: "var(--pie-secondary-light)",
-      }}>
-        Scroll to zoom • Drag to pan
-      </div>
+      {/* Hint */}
+      <div className="ft-hint">Scroll to zoom &middot; Drag to pan</div>
 
-      <svg
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          pointerEvents: "none",
-        }}
-      >
-        <g transform={`translate(${offset.x}, ${offset.y}) scale(${scale})`}>
-          {renderLines()}
-        </g>
-      </svg>
-
+      {/* Tree content (SVG + HTML cards in same transform group) */}
       <div
+        className="ft-world"
         style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+          transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
           transformOrigin: "0 0",
         }}
       >
-        {Array.from(positions.entries()).map(([id, pos]) => {
-          const person = family.people[id];
-          if (!person) return null;
-          
-          const spouse = getSpouse(person, family);
-          const spouseInPositions = spouse && positions.has(spouse.id);
-          
+        {/* SVG layer for connector lines */}
+        <svg
+          className="ft-svg"
+          style={{
+            position: "absolute",
+            left: bounds.minX,
+            top: bounds.minY,
+            width: svgWidth,
+            height: svgHeight,
+            overflow: "visible",
+          }}
+          viewBox={`${bounds.minX} ${bounds.minY} ${svgWidth} ${svgHeight}`}
+        >
+          <ConnectorLines nodes={allNodes} />
+          <VirtualRootConnectors root={layoutRoot} />
+        </svg>
+
+        {/* HTML layer for person cards */}
+        {renderNodes.map((node) => {
+          const hasSpouse = !!node.spouse;
+
+          // Position: if couple, offset both cards from center
+          const personX = hasSpouse
+            ? node.x - (CARD_W + COUPLE_GAP) / 2
+            : node.x - CARD_W / 2;
+          const personY = node.y - CARD_H / 2;
+
           return (
-            <div key={id} style={{ position: "absolute", left: pos.x, top: pos.y, transform: "translate(-50%, -50%)" }}>
-              <PersonCard 
-                person={person} 
-                onClick={() => setSelectedPerson(person)} 
-                isSelected={selectedPerson?.id === person.id}
-              />
-              {spouse && !spouseInPositions && (
-                <div style={{ position: "absolute", left: positions.get(spouse.id)!.x - pos.x, top: 0, transform: "translate(-50%, -50%)" }}>
-                  <PersonCard 
-                    person={spouse} 
-                    onClick={() => setSelectedPerson(spouse)} 
-                    isSelected={selectedPerson?.id === spouse.id}
-                  />
+            <div key={node.id} className="ft-node-group" style={{ position: "absolute" }}>
+              {/* Primary person card */}
+              <div
+                className="ft-node"
+                style={{
+                  left: personX,
+                  top: personY,
+                  width: CARD_W,
+                  height: CARD_H,
+                }}
+              >
+                <PersonCard person={node.person} />
+              </div>
+
+              {/* Spouse card */}
+              {node.spouse && (
+                <div
+                  className="ft-node"
+                  style={{
+                    left: node.x + COUPLE_GAP / 2,
+                    top: personY,
+                    width: CARD_W,
+                    height: CARD_H,
+                  }}
+                >
+                  <PersonCard person={node.spouse} />
                 </div>
               )}
             </div>
