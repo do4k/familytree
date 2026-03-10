@@ -70,8 +70,8 @@ function PersonCard({ person, onClick, isSelected }: { person: Person; onClick: 
 function calculateTreeLayout(root: Person, family: FamilyTree): Map<string, Position> {
   const positions = new Map<string, Position>();
   const nodeWidth = 220;
-  const siblingSpacing = 50;
-  const generationGap = 140;
+  const siblingSpacing = 120;
+  const generationGap = 200;
   
   const centerX = 0;
   const centerY = 0;
@@ -360,6 +360,7 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
           if (!person) return null;
           
           const spouse = getSpouse(person, family);
+          const spouseInPositions = spouse && positions.has(spouse.id);
           
           return (
             <div key={id} style={{ position: "absolute", left: pos.x, top: pos.y, transform: "translate(-50%, -50%)" }}>
@@ -368,7 +369,7 @@ export default function FamilyTree({ family }: FamilyTreeProps) {
                 onClick={() => setSelectedPerson(person)} 
                 isSelected={selectedPerson?.id === person.id}
               />
-              {spouse && positions.get(spouse.id) && (
+              {spouse && !spouseInPositions && (
                 <div style={{ position: "absolute", left: positions.get(spouse.id)!.x - pos.x, top: 0, transform: "translate(-50%, -50%)" }}>
                   <PersonCard 
                     person={spouse} 
